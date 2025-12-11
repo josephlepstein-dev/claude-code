@@ -1,13 +1,46 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
-import { query, withTransaction } from '../database/connection.js';
+import { query } from '../database/connection.js';
 import { config } from '../config/index.js';
-import { User, JWTPayload, UserRole } from '../types/index.js';
+import { JWTPayload, UserRole } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 const SALT_ROUNDS = 12;
+
+// Database row type (snake_case from PostgreSQL)
+interface UserRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  profile_photo?: string;
+  is_active: boolean;
+  is_email_verified: boolean;
+  mfa_enabled: boolean;
+  mfa_secret?: string;
+  last_login_at?: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// API response type (camelCase)
+export interface UserResponse {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  profilePhoto?: string;
+  isActive: boolean;
+  isEmailVerified: boolean;
+  mfaEnabled: boolean;
+  lastLoginAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export interface RegisterData {
   email: string;
@@ -18,7 +51,7 @@ export interface RegisterData {
 }
 
 export interface LoginResult {
-  user: Omit<User, 'passwordHash' | 'mfaSecret'>;
+  user: UserResponse;
   accessToken: string;
   refreshToken: string;
 }
@@ -41,19 +74,21 @@ class AuthService {
 
   // Generate access token
   generateAccessToken(payload: Omit<JWTPayload, 'type'>): string {
+    const options: SignOptions = { expiresIn: '15m' };
     return jwt.sign(
       { ...payload, type: 'access' },
       config.jwt.secret,
-      { expiresIn: config.jwt.expiresIn }
+      options
     );
   }
 
   // Generate refresh token
   generateRefreshToken(payload: Omit<JWTPayload, 'type'>): string {
+    const options: SignOptions = { expiresIn: '7d' };
     return jwt.sign(
       { ...payload, type: 'refresh' },
       config.jwt.refreshSecret,
-      { expiresIn: config.jwt.refreshExpiresIn }
+      options
     );
   }
 
@@ -83,7 +118,7 @@ class AuthService {
   // Register new user
   async register(data: RegisterData): Promise<LoginResult> {
     // Check if user exists
-    const existingUser = await query<User>(
+    const existingUser = await query<UserRow>(
       'SELECT id FROM users WHERE email = $1',
       [data.email.toLowerCase()]
     );
@@ -96,7 +131,7 @@ class AuthService {
     const passwordHash = await this.hashPassword(data.password);
 
     // Create user
-    const result = await query<User>(
+    const result = await query<UserRow>(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, email, first_name, last_name, phone, profile_photo, is_active, is_email_verified, mfa_enabled, created_at, updated_at`,
@@ -125,7 +160,7 @@ class AuthService {
   // Login user
   async login(email: string, password: string): Promise<LoginResult> {
     // Find user
-    const result = await query<User>(
+    const result = await query<UserRow>(
       `SELECT * FROM users WHERE email = $1 AND is_active = true`,
       [email.toLowerCase()]
     );
@@ -137,7 +172,7 @@ class AuthService {
     const user = result.rows[0];
 
     // Verify password
-    const isValid = await this.verifyPassword(password, user.password_hash as unknown as string);
+    const isValid = await this.verifyPassword(password, user.password_hash);
     if (!isValid) {
       throw new Error('Invalid email or password');
     }
@@ -234,8 +269,8 @@ class AuthService {
   }
 
   // Get user by ID
-  async getUserById(userId: string): Promise<Omit<User, 'passwordHash' | 'mfaSecret'> | null> {
-    const result = await query<User>(
+  async getUserById(userId: string): Promise<UserResponse | null> {
+    const result = await query<UserRow>(
       `SELECT id, email, first_name, last_name, phone, profile_photo, is_active, is_email_verified, mfa_enabled, last_login_at, created_at, updated_at
        FROM users WHERE id = $1`,
       [userId]
@@ -274,7 +309,7 @@ class AuthService {
 
   // Change password
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
-    const result = await query<User>(
+    const result = await query<UserRow>(
       'SELECT password_hash FROM users WHERE id = $1',
       [userId]
     );
@@ -283,7 +318,7 @@ class AuthService {
       throw new Error('User not found');
     }
 
-    const isValid = await this.verifyPassword(currentPassword, result.rows[0].password_hash as unknown as string);
+    const isValid = await this.verifyPassword(currentPassword, result.rows[0].password_hash);
     if (!isValid) {
       throw new Error('Current password is incorrect');
     }
@@ -300,21 +335,21 @@ class AuthService {
     logger.info(`Password changed for user: ${userId}`);
   }
 
-  // Format user for response (remove sensitive fields)
-  private formatUser(user: User): Omit<User, 'passwordHash' | 'mfaSecret'> {
+  // Format user for response (convert snake_case to camelCase)
+  private formatUser(user: UserRow): UserResponse {
     return {
       id: user.id,
       email: user.email,
-      firstName: (user as Record<string, string>).first_name || user.firstName,
-      lastName: (user as Record<string, string>).last_name || user.lastName,
+      firstName: user.first_name,
+      lastName: user.last_name,
       phone: user.phone,
-      profilePhoto: (user as Record<string, string>).profile_photo || user.profilePhoto,
-      isActive: (user as Record<string, boolean>).is_active ?? user.isActive,
-      isEmailVerified: (user as Record<string, boolean>).is_email_verified ?? user.isEmailVerified,
-      mfaEnabled: (user as Record<string, boolean>).mfa_enabled ?? user.mfaEnabled,
-      lastLoginAt: (user as Record<string, Date>).last_login_at || user.lastLoginAt,
-      createdAt: (user as Record<string, Date>).created_at || user.createdAt,
-      updatedAt: (user as Record<string, Date>).updated_at || user.updatedAt,
+      profilePhoto: user.profile_photo,
+      isActive: user.is_active,
+      isEmailVerified: user.is_email_verified,
+      mfaEnabled: user.mfa_enabled,
+      lastLoginAt: user.last_login_at,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at,
     };
   }
 }

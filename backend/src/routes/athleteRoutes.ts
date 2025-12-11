@@ -441,7 +441,7 @@ router.get(
         params
       );
 
-      const stats = result.rows[0];
+      const stats = result.rows[0] as Record<string, string>;
       const totalMatches = parseInt(stats.total_matches) || 0;
       const wins = parseInt(stats.wins) || 0;
 
