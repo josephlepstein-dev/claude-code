@@ -12,18 +12,28 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import {
   People,
   Event,
   EmojiEvents,
   Announcement,
-  TrendingUp,
+  Add,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
-import { eventApi, announcementApi, athleteApi } from '../../services/api';
-import { Event as EventType, Announcement as AnnouncementType, Athlete } from '../../types';
+import { eventApi, announcementApi, athleteApi, organizationApi } from '../../services/api';
+import { Event as EventType, Announcement as AnnouncementType } from '../../types';
 
 interface StatCardProps {
   title: string;
@@ -60,7 +70,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
 );
 
 const DashboardPage: React.FC = () => {
-  const { currentOrganization, user } = useAuth();
+  const { currentOrganization, user, refreshUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({
@@ -70,6 +80,19 @@ const DashboardPage: React.FC = () => {
   });
   const [upcomingEvents, setUpcomingEvents] = useState<EventType[]>([]);
   const [recentAnnouncements, setRecentAnnouncements] = useState<AnnouncementType[]>([]);
+
+  // Create organization dialog state
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [createOrgLoading, setCreateOrgLoading] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState<string | null>(null);
+  const [orgForm, setOrgForm] = useState({
+    name: '',
+    type: 'club' as 'club' | 'school' | 'program',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+  });
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -114,15 +137,138 @@ const DashboardPage: React.FC = () => {
     loadDashboardData();
   }, [currentOrganization]);
 
+  const handleCreateOrganization = async () => {
+    if (!orgForm.name.trim()) {
+      setCreateOrgError('Organization name is required');
+      return;
+    }
+
+    setCreateOrgLoading(true);
+    setCreateOrgError(null);
+
+    try {
+      const response = await organizationApi.create({
+        name: orgForm.name.trim(),
+        type: orgForm.type,
+        email: orgForm.email || undefined,
+        phone: orgForm.phone || undefined,
+        city: orgForm.city || undefined,
+        state: orgForm.state || undefined,
+      });
+
+      if (response.data.success) {
+        setCreateOrgOpen(false);
+        setOrgForm({ name: '', type: 'club', email: '', phone: '', city: '', state: '' });
+        // Refresh user data to load the new organization
+        await refreshUser();
+      } else {
+        setCreateOrgError(response.data.message || 'Failed to create organization');
+      }
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      setCreateOrgError(error.response?.data?.message || 'Failed to create organization');
+    } finally {
+      setCreateOrgLoading(false);
+    }
+  };
+
   if (!currentOrganization) {
     return (
       <Box sx={{ textAlign: 'center', py: 4 }}>
-        <Typography variant="h6" gutterBottom>
+        <Typography variant="h5" gutterBottom>
           Welcome to WrestleManager!
         </Typography>
-        <Typography color="text.secondary">
-          You are not part of any organization yet. Create or join an organization to get started.
+        <Typography color="text.secondary" sx={{ mb: 3 }}>
+          You are not part of any organization yet. Create an organization to get started.
         </Typography>
+
+        <Button
+          variant="contained"
+          size="large"
+          startIcon={<Add />}
+          onClick={() => setCreateOrgOpen(true)}
+        >
+          Create Organization
+        </Button>
+
+        {/* Create Organization Dialog */}
+        <Dialog open={createOrgOpen} onClose={() => setCreateOrgOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Create New Organization</DialogTitle>
+          <DialogContent>
+            {createOrgError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {createOrgError}
+              </Alert>
+            )}
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Organization Name"
+              fullWidth
+              required
+              value={orgForm.name}
+              onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+              sx={{ mt: 1 }}
+            />
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Organization Type</InputLabel>
+              <Select
+                value={orgForm.type}
+                label="Organization Type"
+                onChange={(e) => setOrgForm({ ...orgForm, type: e.target.value as 'club' | 'school' | 'program' })}
+              >
+                <MenuItem value="club">Club</MenuItem>
+                <MenuItem value="school">School</MenuItem>
+                <MenuItem value="program">Program</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              margin="dense"
+              label="Email"
+              type="email"
+              fullWidth
+              value={orgForm.email}
+              onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
+            />
+            <TextField
+              margin="dense"
+              label="Phone"
+              fullWidth
+              value={orgForm.phone}
+              onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
+            />
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <TextField
+                  margin="dense"
+                  label="City"
+                  fullWidth
+                  value={orgForm.city}
+                  onChange={(e) => setOrgForm({ ...orgForm, city: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  margin="dense"
+                  label="State"
+                  fullWidth
+                  value={orgForm.state}
+                  onChange={(e) => setOrgForm({ ...orgForm, state: e.target.value })}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setCreateOrgOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleCreateOrganization}
+              variant="contained"
+              disabled={createOrgLoading}
+            >
+              {createOrgLoading ? <CircularProgress size={24} /> : 'Create'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     );
   }
