@@ -366,18 +366,21 @@ async function runMigrations(): Promise<void> {
   logger.info('All migrations completed successfully');
 }
 
-// Run migrations if called directly
-runMigrations()
-  .then(() => {
-    logger.info('Migration script completed');
-    return closePool();
-  })
-  .then(() => {
-    process.exit(0);
-  })
-  .catch((error) => {
-    logger.error('Migration script failed:', error);
-    process.exit(1);
-  });
+// Run migrations if called directly (not when imported as a module)
+const isMainModule = process.argv[1]?.includes('migrate');
+if (isMainModule) {
+  runMigrations()
+    .then(() => {
+      logger.info('Migration script completed');
+      return closePool();
+    })
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((error) => {
+      logger.error('Migration script failed:', error);
+      process.exit(1);
+    });
+}
 
 export { runMigrations };

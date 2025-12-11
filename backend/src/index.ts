@@ -7,6 +7,7 @@ import { Server as SocketServer } from 'socket.io';
 
 import { config, validateConfig } from './config/index.js';
 import { checkConnection } from './database/connection.js';
+import { runMigrations } from './database/migrate.js';
 import { logger } from './utils/logger.js';
 
 // Import routes
@@ -138,13 +139,28 @@ io.on('connection', (socket) => {
 // Export socket.io instance for use in other modules
 export { io };
 
-// Start server
+// Start server with migrations
 const PORT = config.port;
 
-httpServer.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT} in ${config.nodeEnv} mode`);
-  logger.info(`API available at http://localhost:${PORT}${apiPrefix}`);
-});
+async function startServer(): Promise<void> {
+  try {
+    // Run database migrations
+    logger.info('Running database migrations...');
+    await runMigrations();
+    logger.info('Database migrations completed');
+
+    // Start HTTP server
+    httpServer.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT} in ${config.nodeEnv} mode`);
+      logger.info(`API available at http://localhost:${PORT}${apiPrefix}`);
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
