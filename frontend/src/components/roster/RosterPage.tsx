@@ -69,6 +69,8 @@ const RosterPage: React.FC = () => {
   const [filterWeightClass, setFilterWeightClass] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedAthlete, setSelectedAthlete] = useState<Athlete | null>(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<AthleteFormData>();
 
@@ -112,6 +114,7 @@ const RosterPage: React.FC = () => {
   };
 
   const handleOpenDialog = (athlete?: Athlete) => {
+    setSubmitError(null);
     if (athlete) {
       setSelectedAthlete(athlete);
       reset({
@@ -120,14 +123,14 @@ const RosterPage: React.FC = () => {
         dateOfBirth: athlete.dateOfBirth.split('T')[0],
         gender: athlete.gender,
         gradeLevel: athlete.gradeLevel,
-        schoolName: athlete.schoolName,
-        email: athlete.email,
-        phone: athlete.phone,
-        weightClass: athlete.weightClass,
-        address: athlete.address,
-        city: athlete.city,
-        state: athlete.state,
-        zipCode: athlete.zipCode,
+        schoolName: athlete.schoolName || '',
+        email: athlete.email || '',
+        phone: athlete.phone || '',
+        weightClass: athlete.weightClass || '',
+        address: athlete.address || '',
+        city: athlete.city || '',
+        state: athlete.state || '',
+        zipCode: athlete.zipCode || '',
       });
     } else {
       setSelectedAthlete(null);
@@ -155,6 +158,9 @@ const RosterPage: React.FC = () => {
   const onSubmit = async (data: AthleteFormData) => {
     if (!currentOrganization) return;
 
+    setSubmitLoading(true);
+    setSubmitError(null);
+
     try {
       if (selectedAthlete) {
         await athleteApi.update(selectedAthlete.id, data);
@@ -166,8 +172,15 @@ const RosterPage: React.FC = () => {
       }
       handleCloseDialog();
       loadAthletes();
-    } catch (err) {
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string; errors?: Array<{ msg: string }> } } };
+      const errorMessage = error.response?.data?.errors?.[0]?.msg
+        || error.response?.data?.message
+        || 'Failed to save athlete';
+      setSubmitError(errorMessage);
       console.error(err);
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
@@ -352,6 +365,11 @@ const RosterPage: React.FC = () => {
         <DialogTitle>{selectedAthlete ? 'Edit Athlete' : 'Add Athlete'}</DialogTitle>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogContent>
+            {submitError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {submitError}
+              </Alert>
+            )}
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
                 <Controller
@@ -486,9 +504,9 @@ const RosterPage: React.FC = () => {
             </Grid>
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancel</Button>
-            <Button type="submit" variant="contained">
-              {selectedAthlete ? 'Save Changes' : 'Add Athlete'}
+            <Button onClick={handleCloseDialog} disabled={submitLoading}>Cancel</Button>
+            <Button type="submit" variant="contained" disabled={submitLoading}>
+              {submitLoading ? <CircularProgress size={24} /> : (selectedAthlete ? 'Save Changes' : 'Add Athlete')}
             </Button>
           </DialogActions>
         </form>
