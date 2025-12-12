@@ -35,6 +35,17 @@ import { useAuth } from '../../contexts/AuthContext';
 import { eventApi, announcementApi, athleteApi, organizationApi } from '../../services/api';
 import { Event as EventType, Announcement as AnnouncementType } from '../../types';
 
+// Helper to get date field (handles both snake_case and camelCase from API)
+const getDateField = (obj: Record<string, unknown>, camelCase: string, snakeCase: string): string | null => {
+  const value = obj[camelCase] || obj[snakeCase];
+  return value ? String(value) : null;
+};
+
+const getStringField = (obj: Record<string, unknown>, camelCase: string, snakeCase: string): string | undefined => {
+  const value = obj[camelCase] || obj[snakeCase];
+  return value ? String(value) : undefined;
+};
+
 interface StatCardProps {
   title: string;
   value: string | number;
@@ -351,27 +362,32 @@ const DashboardPage: React.FC = () => {
               </Typography>
             ) : (
               <List>
-                {upcomingEvents.map((event) => (
-                  <ListItem key={event.id} divider>
-                    <ListItemText
-                      primary={event.title}
-                      secondary={
-                        <>
-                          {format(new Date(event.startDateTime), 'MMM d, yyyy h:mm a')}
-                          {event.locationName && ` - ${event.locationName}`}
-                        </>
-                      }
-                    />
-                    <Chip
-                      label={event.type.replace('_', ' ')}
-                      size="small"
-                      sx={{
-                        backgroundColor: `${eventTypeColors[event.type]}20`,
-                        color: eventTypeColors[event.type],
-                      }}
-                    />
-                  </ListItem>
-                ))}
+                {upcomingEvents.map((event) => {
+                  const eventObj = event as unknown as Record<string, unknown>;
+                  const startDate = getDateField(eventObj, 'startDateTime', 'start_date_time');
+                  const locationName = getStringField(eventObj, 'locationName', 'location_name');
+                  return (
+                    <ListItem key={event.id} divider>
+                      <ListItemText
+                        primary={event.title}
+                        secondary={
+                          <>
+                            {startDate ? format(new Date(startDate), 'MMM d, yyyy h:mm a') : 'No date'}
+                            {locationName && ` - ${locationName}`}
+                          </>
+                        }
+                      />
+                      <Chip
+                        label={event.type.replace('_', ' ')}
+                        size="small"
+                        sx={{
+                          backgroundColor: `${eventTypeColors[event.type]}20`,
+                          color: eventTypeColors[event.type],
+                        }}
+                      />
+                    </ListItem>
+                  );
+                })}
               </List>
             )}
           </Paper>
@@ -389,21 +405,26 @@ const DashboardPage: React.FC = () => {
               </Typography>
             ) : (
               <List>
-                {recentAnnouncements.map((announcement) => (
-                  <ListItem key={announcement.id} divider>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {announcement.title}
-                          {announcement.isUrgent && (
-                            <Chip label="Urgent" size="small" color="error" />
-                          )}
-                        </Box>
-                      }
-                      secondary={format(new Date(announcement.createdAt), 'MMM d, yyyy')}
-                    />
-                  </ListItem>
-                ))}
+                {recentAnnouncements.map((announcement) => {
+                  const announcementObj = announcement as unknown as Record<string, unknown>;
+                  const createdAt = getDateField(announcementObj, 'createdAt', 'created_at');
+                  const isUrgent = announcementObj['isUrgent'] || announcementObj['is_urgent'];
+                  return (
+                    <ListItem key={announcement.id} divider>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {announcement.title}
+                            {isUrgent && (
+                              <Chip label="Urgent" size="small" color="error" />
+                            )}
+                          </Box>
+                        }
+                        secondary={createdAt ? format(new Date(createdAt), 'MMM d, yyyy') : 'No date'}
+                      />
+                    </ListItem>
+                  );
+                })}
               </List>
             )}
           </Paper>
