@@ -408,7 +408,7 @@ const DashboardPage: React.FC = () => {
                 {recentAnnouncements.map((announcement) => {
                   const announcementObj = announcement as unknown as Record<string, unknown>;
                   const createdAt = getDateField(announcementObj, 'createdAt', 'created_at');
-                  const isUrgent = announcementObj['isUrgent'] || announcementObj['is_urgent'];
+                  const isUrgent = Boolean(announcementObj['isUrgent'] || announcementObj['is_urgent']);
                   return (
                     <ListItem key={announcement.id} divider>
                       <ListItemText
